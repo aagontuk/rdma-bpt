@@ -25,6 +25,14 @@ static void die(const char *msg) {
 }
 
 int main() {
+    void *buffer = malloc(BUFFER_SIZE);
+    if (!buffer) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    
+    strcpy(buffer, "Hello from RDMA server!");
+
     struct addrinfo hints = { .ai_flags = AI_PASSIVE,
                               .ai_family = AF_INET,
                               .ai_socktype = SOCK_STREAM };
@@ -60,11 +68,13 @@ int main() {
             // allocate context
             struct server_context *ctx = calloc(1, sizeof(*ctx));
             ctx->id = ev.id;
+            printf("rdma-server: \n");
             ev.id->context = ctx;
 
             // allocate & register a buffer
-            ctx->buf = malloc(BUFFER_SIZE);
-            strcpy(ctx->buf, "Hello from RDMA server!");
+            ctx->buf = buffer;
+            // ctx->buf = malloc(BUFFER_SIZE);
+            // strcpy(ctx->buf, "Hello from RDMA server!");
             ctx->pd  = ibv_alloc_pd(ev.id->verbs);
             if (!ctx->pd) die("ibv_alloc_pd");
             ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, BUFFER_SIZE,
@@ -98,6 +108,10 @@ int main() {
             conn_param.private_data        = &mem_info;
             conn_param.private_data_len    = sizeof(mem_info);
 
+            printf("private data: addr=%lx, rkey=%x\n",
+                   (unsigned long)mem_info.addr, mem_info.rkey);
+            printf("private data length: %zu\n", sizeof(mem_info));
+
             if (rdma_accept(ev.id, &conn_param))
                 die("rdma_accept");
 
@@ -109,7 +123,7 @@ int main() {
             rdma_destroy_qp(ev.id);
             ibv_dereg_mr(ctx->mr);
             ibv_dealloc_pd(ctx->pd);
-            free(ctx->buf);
+            // free(ctx->buf);
             rdma_destroy_id(ev.id);
             free(ctx);
         }

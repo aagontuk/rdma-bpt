@@ -93,16 +93,23 @@ void *run_connection(void *arg) {
         die("expected ESTABLISHED");
 
     printf("Thread %d connected\n", ctx->thread_id);
-    printf("Thread %d waiting for private data\n", ctx->thread_id);
+
+    printf("Thread %d private data len: %d\n",
+           ctx->thread_id, event->param.conn.private_data_len);
+    
     // pull down MR info
     struct {
         uint64_t addr;
         uint32_t rkey;
     } mem_info;
     
+    // memcpy(&mem_info,
+    //        event->param.conn.private_data,
+    //        event->param.conn.private_data_len);
+
     memcpy(&mem_info,
            event->param.conn.private_data,
-           event->param.conn.private_data_len);
+           sizeof(mem_info));
     
     rdma_ack_cm_event(event);
     printf("Thread %d got private data: addr=%lx, rkey=%x\n",
@@ -125,19 +132,21 @@ void *run_connection(void *arg) {
     }, *bad_wr = NULL;
 
     printf("Thread %d posting RDMA read\n", ctx->thread_id);
-    if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
-        die("ibv_post_send");
-    // wait for completion
-    printf("Thread %d waiting for completion\n", ctx->thread_id);
-    struct ibv_wc wc;
-    do {
-        ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
-    } while (wc.status == IBV_WC_SUCCESS && wc.opcode != IBV_WC_RDMA_READ);
-    if (wc.status != IBV_WC_SUCCESS)
-        die("RDMA read failed");
+    for (int i = 0; i < 8; i++) {
+      if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
+          die("ibv_post_send");
+      // wait for completion
+      printf("Thread %d waiting for completion\n", ctx->thread_id);
+      struct ibv_wc wc;
+      do {
+          ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
+      } while (wc.status == IBV_WC_SUCCESS && wc.opcode != IBV_WC_RDMA_READ);
+      if (wc.status != IBV_WC_SUCCESS)
+          die("RDMA read failed");
 
-    printf("Thread %d read: \"%s\"\n",
-           ctx->thread_id, ctx->local_buf);
+      printf("Thread %d read: \"%s\"\n",
+            ctx->thread_id, ctx->local_buf);
+    }
 
     // teardown
     rdma_disconnect(ctx->id);
