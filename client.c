@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <rdma/rdma_cma.h>
 #include <infiniband/verbs.h>
+#include "bpt.h"
 
 #define SERVER_IP    "10.10.1.1"
 #define SERVER_PORT  "20079"
@@ -115,28 +116,38 @@ void *run_connection(void *arg) {
     printf("Thread %d got private data: addr=%lx, rkey=%x\n",
            ctx->thread_id, mem_info.addr, mem_info.rkey);
 
-    // post an RDMA READ
-    struct ibv_sge sge = {
-        .addr   = (uintptr_t)ctx->local_buf,
-        .length = BUFFER_SIZE,
-        .lkey   = ctx->mr->lkey
-    };
-    struct ibv_send_wr rd_wr = {
-        .opcode      = IBV_WR_RDMA_READ,
-        .wr.rdma =
-            { .remote_addr = mem_info.addr,
-              .rkey        = mem_info.rkey },
-        .sg_list     = &sge,
-        .num_sge     = 1,
-        .send_flags  = IBV_SEND_SIGNALED
-    }, *bad_wr = NULL;
+    uint64_t root_addr = 0x7faad7d61905;
+    // uint64_t key = 6;
+    uint64_t key = 100000000;
+    Node *c;
+    int found = 0;
 
     printf("Thread %d posting RDMA read\n", ctx->thread_id);
-    for (int i = 0; i < 8; i++) {
+    
+    // traverse the B+ tree until we reach a leaf node
+    while(1) {
+      // post an RDMA READ
+      struct ibv_sge sge = {
+          .addr   = (uintptr_t)ctx->local_buf,
+          .length = (uint32_t) sizeof(Node),
+          .lkey   = ctx->mr->lkey
+      };
+      struct ibv_send_wr rd_wr = {
+          .opcode      = IBV_WR_RDMA_READ,
+          .wr.rdma =
+              { .remote_addr = root_addr,
+                .rkey        = mem_info.rkey },
+          .sg_list     = &sge,
+          .num_sge     = 1,
+          .send_flags  = IBV_SEND_SIGNALED
+      }, *bad_wr = NULL;
+      
       if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
           die("ibv_post_send");
+      
       // wait for completion
       printf("Thread %d waiting for completion\n", ctx->thread_id);
+      
       struct ibv_wc wc;
       do {
           ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
@@ -144,8 +155,30 @@ void *run_connection(void *arg) {
       if (wc.status != IBV_WC_SUCCESS)
           die("RDMA read failed");
 
-      printf("Thread %d read: \"%s\"\n",
-            ctx->thread_id, ctx->local_buf);
+      c = (Node *)ctx->local_buf;
+      if (c->leaf)
+        break;
+      
+      // search for the first key greater than or equal to key
+      int i = 0;
+      while (i < (int)c->n && key >= c->keys[i]) i++;
+      root_addr = (uint64_t)c->children[i];
+
+      // printf("Thread %d root key0: %lu\n",
+      //       ctx->thread_id, c->keys[0]);
+    }
+
+    // linear search in the leaf node
+    for (int i = 0; i < (int)c->n; i++) {
+        if (c->keys[i] == key) {
+            printf("Thread %d found key %lu\n", ctx->thread_id, key);
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+      printf("Thread %d not found key %lu\n", ctx->thread_id, key);
     }
 
     // teardown
