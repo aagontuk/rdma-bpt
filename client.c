@@ -12,7 +12,7 @@
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
 #define MAX_THREADS  16
-#define BENCH_TIME 2
+#define BENCH_TIME 10
 
 struct mem_info {
     uint64_t addr;
@@ -276,6 +276,7 @@ void *run_connection(void *arg) {
 int main(int argc, char **argv) {
     int n = (argc>1 ? atoi(argv[1]) : 1);
     pthread_t th[n];
+    uint64_t total_ops = 0;
 
     double cycles = get_tsc_freq(1000) * BENCH_TIME;
 
@@ -288,8 +289,14 @@ int main(int argc, char **argv) {
     }
     for (int i = 0; i < n; i++) {
         pthread_join(th[i], NULL);
-        printf("Thread %d: %lu ops\n", i, stats[i].num_ops);
+        total_ops += stats[i].num_ops;
     }
+
+    // print throughput
+    double tsc_freq = get_tsc_freq(1000);
+    double elapsed = (double)cycles / tsc_freq;
+    double throughput = (double)total_ops / elapsed;
+    printf("Throughput: %.2f ops/sec\n", throughput);
 
     return 0;
 }
