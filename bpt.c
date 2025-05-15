@@ -26,13 +26,16 @@ Node *bpt_create_node(struct bpt_state *state, uint8_t leaf) {
 int bpt_search(struct bpt_state *state, uint64_t key) {
     if (!state->root) return 0;
     Node *c = state->root;
+    printf("node addr: %p, leaf: %d, key0: %lu\n", c, c->leaf, c->keys[0]);
     
     // descend to leaf
     while (!c->leaf) {
+        // print key0
         int i = 0;
         // search for the first key greater than or equal to key
         while (i < (int)c->n && key >= c->keys[i]) i++;
         c = c->children[i];
+        printf("node addr: %p, leaf: %d, key0: %lu\n", c, c->leaf, c->keys[0]);
     }
     
     // linear scan in leaf

@@ -101,7 +101,8 @@ int main() {
             if (!ctx->pd) die("ibv_alloc_pd");
             ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, BUFFER_SIZE,
                                  IBV_ACCESS_LOCAL_WRITE |
-                                 IBV_ACCESS_REMOTE_READ);
+                                 IBV_ACCESS_REMOTE_READ | 
+                                 IBV_ACCESS_REMOTE_WRITE);
             if (!ctx->mr) die("ibv_reg_mr");
 
             // create a QP for this connection
@@ -121,7 +122,7 @@ int main() {
                 uint64_t addr;
                 uint32_t rkey;
             } mem_info = {
-                .addr = (uint64_t)(uintptr_t)ctx->buf,
+                .addr = (uint64_t)ctx->buf,
                 .rkey = ctx->mr->rkey
             };
 
