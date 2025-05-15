@@ -180,93 +180,93 @@ void *run_connection(void *arg) {
     connect_client(ctx);
 
     // printf("Thread %d posting RDMA read\n", ctx->thread_id);
-    // uint64_t start = rdtsc();
-    // uint64_t diff = 0;
+    uint64_t start = rdtsc();
+    uint64_t diff = 0;
     struct ibv_send_wr rd_wr, *bad_wr = NULL;
 
-    // while(diff < ctx->cycles) {
-    uint64_t node_next = 0x7fe0ccc00905;
-    uint64_t key = 6;
-    // uint64_t key = 100000000;
-    Node *c;
-    int found = 0;
-    
-    struct ibv_sge sge = {
-        .addr   = (uint64_t)ctx->local_buf,
-        .length = (uint32_t) sizeof(Node),
-        .lkey   = ctx->mr->lkey
-    };
+    while(diff < ctx->cycles) {
+        uint64_t node_next = 0x7fe0ccc00905;
+        uint64_t key = 6;
+        // uint64_t key = 100000000;
+        Node *c;
+        int found = 0;
+        
+        struct ibv_sge sge = {
+            .addr   = (uint64_t)ctx->local_buf,
+            .length = (uint32_t) sizeof(Node),
+            .lkey   = ctx->mr->lkey
+        };
 
-    // traverse the B+ tree until we reach a leaf node
-    int req_num = 0;
-    while(1) {
-      bzero(ctx->local_buf, BUFFER_SIZE);
-      bzero(&rd_wr, sizeof(rd_wr));
-      uint64_t wr_id = ctx->thread_id * 10 + req_num++;
-      
-      rd_wr.wr_id      = wr_id;
-      rd_wr.opcode      = IBV_WR_RDMA_READ;
-      rd_wr.wr.rdma.remote_addr = node_next;
-      rd_wr.wr.rdma.rkey        = ctx->mem_info.rkey;
-      rd_wr.sg_list     = &sge;
-      rd_wr.num_sge     = 1;
-      rd_wr.send_flags  = IBV_SEND_SIGNALED;
+        // traverse the B+ tree until we reach a leaf node
+        int req_num = 0;
+        while(1) {
+          bzero(ctx->local_buf, BUFFER_SIZE);
+          bzero(&rd_wr, sizeof(rd_wr));
+          uint64_t wr_id = ctx->thread_id * 10 + req_num++;
+          
+          rd_wr.wr_id      = wr_id;
+          rd_wr.opcode      = IBV_WR_RDMA_READ;
+          rd_wr.wr.rdma.remote_addr = node_next;
+          rd_wr.wr.rdma.rkey        = ctx->mem_info.rkey;
+          rd_wr.sg_list     = &sge;
+          rd_wr.num_sge     = 1;
+          rd_wr.send_flags  = IBV_SEND_SIGNALED;
 
-      // printf("Thread %d posting RDMA read, wr_id=%lu, addr=0x%lx\n",
-            // ctx->thread_id, wr_id, node_next);
-      if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
-          die("ibv_post_send");
-      
-      struct ibv_wc wc;
-      while(1) {
-          ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
-          if (wc.opcode == IBV_WC_RDMA_READ && wc.status == IBV_WC_SUCCESS && wc.wr_id == wr_id)
-              break;
-          // printf("Thread %d polling CQ, wr_id=%lu, opcode=%d\n",
-                // ctx->thread_id, wc.wr_id, wc.opcode);
-      }
-      
-      if (wc.status != IBV_WC_SUCCESS)
-          die("RDMA read failed");
+          // printf("Thread %d posting RDMA read, wr_id=%lu, addr=0x%lx\n",
+                // ctx->thread_id, wr_id, node_next);
+          if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
+              die("ibv_post_send");
+          
+          struct ibv_wc wc;
+          while(1) {
+              ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
+              if (wc.opcode == IBV_WC_RDMA_READ && wc.status == IBV_WC_SUCCESS && wc.wr_id == wr_id)
+                  break;
+              // printf("Thread %d polling CQ, wr_id=%lu, opcode=%d\n",
+                    // ctx->thread_id, wc.wr_id, wc.opcode);
+          }
+          
+          if (wc.status != IBV_WC_SUCCESS)
+              die("RDMA read failed");
 
-      c = (Node *)ctx->local_buf;
+          c = (Node *)ctx->local_buf;
 
-      // printf("Thread %d read node at 0x%lx, n=%lu, leaf=%d, key0=%lu\n",
-            // ctx->thread_id, node_next, c->n, c->leaf, c->keys[0]);
-      
-      if (c->leaf) {
-        printf("Thread %d found leaf node at 0x%lx\n", ctx->thread_id, node_next);
-        break;
-      }
-      
-      // search for the first key greater than or equal to key
-      int i = 0;
-      while (i < c->n && key >= c->keys[i]) {
-        i++;
-      }
-      
-      node_next = (uint64_t)c->children[i];
-      // printf("Thread %d next node: 0x%lx\n", ctx->thread_id, node_next);
-      // printf("Thread %d root addr: 0x%lx, key0: %lu\n",
-            // ctx->thread_id, node_next, c->keys[0]);
-    }
-
-    // linear search in the leaf node
-    for (int i = 0; i < (int)c->n; i++) {
-        if (c->keys[i] == key) {
-            // printf("Thread %d found key %lu\n", ctx->thread_id, key);
-            // found = 1;
+          // printf("Thread %d read node at 0x%lx, n=%lu, leaf=%d, key0=%lu\n",
+                // ctx->thread_id, node_next, c->n, c->leaf, c->keys[0]);
+          
+          if (c->leaf) {
+            // printf("Thread %d found leaf node at 0x%lx\n", ctx->thread_id, node_next);
             break;
+          }
+          
+          // search for the first key greater than or equal to key
+          int i = 0;
+          while (i < c->n && key >= c->keys[i]) {
+            i++;
+          }
+          
+          node_next = (uint64_t)c->children[i];
+          // printf("Thread %d next node: 0x%lx\n", ctx->thread_id, node_next);
+          // printf("Thread %d root addr: 0x%lx, key0: %lu\n",
+                // ctx->thread_id, node_next, c->keys[0]);
         }
-    }
 
-    // if (!found) {
-    //     printf("thread %d not found key %lu\n", ctx->thread_id, key);
-    // }
-    //
-        // stats[ctx->thread_id].num_ops++;
-        // diff = rdtsc() - start;
-    // }
+        // linear search in the leaf node
+        for (int i = 0; i < (int)c->n; i++) {
+            if (c->keys[i] == key) {
+                // printf("Thread %d found key %lu\n", ctx->thread_id, key);
+                // found = 1;
+                break;
+            }
+        }
+
+        // if (!found) {
+        //     printf("thread %d not found key %lu\n", ctx->thread_id, key);
+        // }
+        //
+        stats[ctx->thread_id].num_ops++;
+        diff = rdtsc() - start;
+    }
     
     // teardown
     disconnect_client(ctx);
