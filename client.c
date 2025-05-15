@@ -13,6 +13,7 @@
 #define BUFFER_SIZE  8192
 #define MAX_THREADS  16
 #define BENCH_TIME 10
+#define MAX_SAMPLES ((uint64_t)10000000)
 
 struct mem_info {
     uint64_t addr;
@@ -30,11 +31,29 @@ struct client_context {
     double cycles;
 };
 
-struct stats {
+static struct stats {
   uint64_t num_ops;
-} __attribute__((aligned(64)));
+} __attribute__((aligned(64))) stats[MAX_THREADS];
 
-struct stats stats[MAX_THREADS];
+static struct container_rrt {
+	uint64_t *rtt;
+} __attribute__((aligned(64))) rtt_times[MAX_THREADS];
+
+static struct arr_index {
+	uint64_t index;
+} __attribute__((aligned(64))) arr_index[MAX_THREADS];
+
+static uint64_t *diff_times;
+
+int comp(const void *a, const void *b) {
+	uint64_t ua = *((uint64_t *)a);
+	uint64_t ub = *((uint64_t *)b);
+
+	if (ua > ub) return 1;
+	if (ua < ub) return -1;
+
+	return 0;
+}
 
 static void die(const char *msg) {
     perror(msg);
@@ -182,6 +201,7 @@ void *run_connection(void *arg) {
     // printf("Thread %d posting RDMA read\n", ctx->thread_id);
     uint64_t start = rdtsc();
     uint64_t diff = 0;
+    uint64_t op_start = 0;
     struct ibv_send_wr rd_wr, *bad_wr = NULL;
 
     while(diff < ctx->cycles) {
@@ -199,6 +219,7 @@ void *run_connection(void *arg) {
 
         // traverse the B+ tree until we reach a leaf node
         int req_num = 0;
+        op_start = rdtsc();
         while(1) {
           bzero(ctx->local_buf, BUFFER_SIZE);
           bzero(&rd_wr, sizeof(rd_wr));
@@ -265,6 +286,7 @@ void *run_connection(void *arg) {
         // }
         //
         stats[ctx->thread_id].num_ops++;
+	      rtt_times[ctx->thread_id].rtt[arr_index[ctx->thread_id].index++] = rdtsc() - op_start;
         diff = rdtsc() - start;
     }
     
@@ -279,6 +301,17 @@ int main(int argc, char **argv) {
     uint64_t total_ops = 0;
 
     double cycles = get_tsc_freq(1000) * BENCH_TIME;
+  
+    diff_times = (uint64_t *)malloc(MAX_SAMPLES * sizeof(uint64_t));
+    if (!diff_times)
+      die("Cannot allocate memory for diff_times\n");
+
+    // Initialize per queue data structures
+    for (int i = 0; i < n; i++) {
+      rtt_times[i].rtt = (uint64_t *)calloc(MAX_SAMPLES / n, sizeof(uint64_t));
+      if (!rtt_times[i].rtt)
+        die("Cannot allocate memory for rtt_times\n");
+    }
 
     for (int i = 0; i < n; i++) {
         struct client_context *ctx = calloc(1, sizeof(*ctx));
@@ -292,11 +325,33 @@ int main(int argc, char **argv) {
         total_ops += stats[i].num_ops;
     }
 
+    printf("Total ops: %lu\n", total_ops);
+
     // print throughput
     double tsc_freq = get_tsc_freq(1000);
     double elapsed = (double)cycles / tsc_freq;
     double throughput = (double)total_ops / elapsed;
     printf("Throughput: %.2f ops/sec\n", throughput);
+	
+    uint64_t included_samples = 0;
+    uint64_t total_cycles = 0;
+
+    for (uint64_t j = 0; j < n; j++) {
+      for (uint64_t i = arr_index[j].index * 0.1; i < arr_index[j].index * 0.9; i++) {
+        total_cycles += rtt_times[j].rtt[i];
+        diff_times[included_samples++] = rtt_times[j].rtt[i];
+      }
+    }
+    
+    // Measure p50 and p99 latency 
+    qsort(diff_times, included_samples, sizeof(uint64_t), comp);
+    uint64_t p50_cycles = diff_times[(uint64_t)(included_samples * 0.5)];
+    uint64_t p99_cycles = diff_times[(uint64_t)(included_samples * 0.99)];
+
+    printf("mean latency (us): %f\n", (float) total_cycles *
+      1000 * 1000 / (included_samples * tsc_freq));
+    printf("median latency (us): %f\n", (p50_cycles * 1000.0 * 1000.0) / tsc_freq);
+    printf("99th latency (us): %f\n", (p99_cycles * 1000.0 * 1000.0) / tsc_freq);
 
     return 0;
 }
