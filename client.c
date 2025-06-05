@@ -11,6 +11,8 @@
 #define SERVER_IP    "10.10.1.1"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
+#define ROOT_ADDR 0x7f398724b905
+
 #define MAX_THREADS  16
 #define BENCH_TIME 10
 #define MAX_SAMPLES ((uint64_t)10000000)
@@ -205,7 +207,7 @@ void *run_connection(void *arg) {
     struct ibv_send_wr rd_wr, *bad_wr = NULL;
 
     while(diff < ctx->cycles) {
-        uint64_t node_next = 0x7fe0ccc00905;
+        uint64_t node_next = ROOT_ADDR;
         uint64_t key = 6;
         // uint64_t key = 100000000;
         Node *c;
@@ -243,6 +245,9 @@ void *run_connection(void *arg) {
               ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
               if (wc.opcode == IBV_WC_RDMA_READ && wc.status == IBV_WC_SUCCESS && wc.wr_id == wr_id)
                   break;
+
+              if (wc.status != IBV_WC_SUCCESS)
+                  die("ibv_poll_cq failed");
               // printf("Thread %d polling CQ, wr_id=%lu, opcode=%d\n",
                     // ctx->thread_id, wc.wr_id, wc.opcode);
           }

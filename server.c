@@ -45,15 +45,15 @@ int main() {
         bpt_insert(state, key);
     }
     
+    printf("root addr: %p (**CHANGE CLIENT ACCORDINGLY**)\n", state->root);
+    printf("root key0: %lu\n", state->root->keys[0]);
+    
     printf("search 6 → %s\n", bpt_search(state, 6) ? "found" : "not found");
     printf("search 15 → %s\n", bpt_search(state, 15)? "found" : "not found");
     printf("search 100000000 → %s\n", bpt_search(state, 100000000)? "found" : "not found");
 
     printf("num levels: %d\n", bpt_num_levels(state)); 
     
-    // strcpy(buffer, "Hello from RDMA server!");
-    printf("root addr: %p\n", state->root);
-    printf("root key0: %lu\n", state->root->keys[0]);
 
     struct addrinfo hints = { .ai_flags = AI_PASSIVE,
                               .ai_family = AF_INET,
