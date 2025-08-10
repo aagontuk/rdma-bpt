@@ -2,7 +2,7 @@
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 LOG_FILE="${SCRIPT_DIR}/run_exp.log"
-NUM_THREADS=2
+NUM_THREADS=24
 
 for i in $(seq 1 $NUM_THREADS); do
   echo "Running client with $i threads..."
