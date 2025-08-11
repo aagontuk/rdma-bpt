@@ -6,14 +6,16 @@
 #include <arpa/inet.h>
 #include <rdma/rdma_cma.h>
 #include <infiniband/verbs.h>
+#include <emmintrin.h>
 #include "bpt.h"
 
-#define SERVER_IP    "10.10.1.1"
+#define SERVER_IP    "192.168.1.3"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
-#define ROOT_ADDR 0x7f398724b905
+#define ROOT_ADDR 0x7f72f69bb905
 
-#define MAX_THREADS  16
+#define BATCH_SIZE 32
+#define MAX_THREADS  24
 #define BENCH_TIME 10
 #define MAX_SAMPLES ((uint64_t)10000000)
 
@@ -93,6 +95,17 @@ double get_tsc_freq(int sleep_ms) {
     return (double)(c1 - c0) / dt;
 }
 
+inline int pollCompletion(struct ibv_cq* cq, size_t expected, struct ibv_wc* wcReturn)
+{
+  int numCompletions = 0;
+  numCompletions = ibv_poll_cq(cq, expected, wcReturn);
+  if (numCompletions < 0) {
+    printf("FAILED: Polling completions failed\n");
+    exit(EXIT_FAILURE);
+  }
+  return numCompletions;
+}
+
 void connect_client(struct client_context *ctx) {
     struct rdma_cm_event *event;
     struct rdma_conn_param conn_param = { 0 };
@@ -138,8 +151,8 @@ void connect_client(struct client_context *ctx) {
     // create QP
     printf("Creating QP for thread %d\n", ctx->thread_id);
     struct ibv_qp_init_attr qp_attr = {
-        .cap        = { .max_send_wr  = 8,
-                        .max_recv_wr  = 8,
+        .cap        = { .max_send_wr  = 1024,
+                        .max_recv_wr  = 1024,
                         .max_send_sge = 2,
                         .max_recv_sge = 2 },
         .sq_sig_all = 1,
@@ -237,23 +250,28 @@ void *run_connection(void *arg) {
 
           // printf("Thread %d posting RDMA read, wr_id=%lu, addr=0x%lx\n",
                 // ctx->thread_id, wr_id, node_next);
-          if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
-              die("ibv_post_send");
-          
-          struct ibv_wc wc;
-          while(1) {
-              ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
-              if (wc.opcode == IBV_WC_RDMA_READ && wc.status == IBV_WC_SUCCESS && wc.wr_id == wr_id)
-                  break;
-
-              if (wc.status != IBV_WC_SUCCESS)
-                  die("ibv_poll_cq failed");
-              // printf("Thread %d polling CQ, wr_id=%lu, opcode=%d\n",
-                    // ctx->thread_id, wc.wr_id, wc.opcode);
+          for (int i = 0; i < BATCH_SIZE; i++) {
+              if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
+                die("ibv_post_send");
           }
           
-          if (wc.status != IBV_WC_SUCCESS)
-              die("RDMA read failed");
+          
+          int comp = 0;
+          int tot_comp = 0;
+          int tot_expected = BATCH_SIZE;
+          struct ibv_wc wcReturn[BATCH_SIZE];
+          while (tot_comp != tot_expected) {
+            _mm_pause();
+            int expected = tot_expected - tot_comp;
+            comp = pollCompletion(ctx->id->qp->send_cq, expected, wcReturn);
+            for (int i = 0; i < comp; i++) {
+              if (wcReturn[i].status != IBV_WC_SUCCESS) {
+                printf("Thread %d: Completion failed with status %s\n", ctx->thread_id, ibv_wc_status_str(wcReturn[i].status));
+                exit(EXIT_FAILURE);
+              }
+            }
+            tot_comp += comp;
+          }
 
           c = (Node *)ctx->local_buf;
 
@@ -290,7 +308,7 @@ void *run_connection(void *arg) {
         //     printf("thread %d not found key %lu\n", ctx->thread_id, key);
         // }
         //
-        stats[ctx->thread_id].num_ops++;
+        stats[ctx->thread_id].num_ops += BATCH_SIZE;
 	      rtt_times[ctx->thread_id].rtt[arr_index[ctx->thread_id].index++] = rdtsc() - op_start;
         diff = rdtsc() - start;
     }
@@ -330,6 +348,7 @@ int main(int argc, char **argv) {
         total_ops += stats[i].num_ops;
     }
 
+    printf("Size of each node: %lu bytes\n", sizeof(Node));
     printf("Total ops: %lu\n", total_ops);
 
     // print throughput

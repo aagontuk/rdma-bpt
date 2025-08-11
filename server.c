@@ -107,8 +107,8 @@ int main() {
 
             // create a QP for this connection
             struct ibv_qp_init_attr qp_attr = {
-                .cap        = { .max_send_wr  = 8,
-                                .max_recv_wr  = 8,
+                .cap        = { .max_send_wr  = 1024,
+                                .max_recv_wr  = 1024,
                                 .max_send_sge = 2,
                                 .max_recv_sge = 2 },
                 .sq_sig_all = 1,
