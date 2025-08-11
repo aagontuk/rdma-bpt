@@ -12,7 +12,7 @@
 #define SERVER_IP    "192.168.1.3"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
-#define ROOT_ADDR 0x7fcdfb64b905
+#define ROOT_ADDR 0x78ec469f9905
 
 #define BATCH_SIZE 32
 #define MAX_THREADS  24
@@ -235,14 +235,8 @@ void *run_connection(void *arg) {
         // traverse the B+ tree until we reach a leaf node
         int req_num = 0;
         op_start = rdtsc();
-        int batch_num = 0;
         while(1) {
-          bzero(ctx->local_buf, BUFFER_SIZE);
-          bzero(&rd_wr, sizeof(rd_wr));
-          uint64_t wr_id = ctx->thread_id * 10 + req_num++;
-          wr_id = 0;
-          
-          rd_wr.wr_id      = wr_id;
+          rd_wr.wr_id      = 0;
           rd_wr.opcode      = IBV_WR_RDMA_READ;
           rd_wr.wr.rdma.remote_addr = node_next;
           rd_wr.wr.rdma.rkey        = ctx->mem_info.rkey;
@@ -253,7 +247,6 @@ void *run_connection(void *arg) {
 
           // printf("Thread %d posting RDMA read, wr_id=%lu, addr=0x%lx\n",
                 // ctx->thread_id, wr_id, node_next);
-          printf("Submitted batch: %d\n", batch_num);
           for (int i = 0; i < BATCH_SIZE; i++) {
               if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
                 die("ibv_post_send");
@@ -276,7 +269,6 @@ void *run_connection(void *arg) {
             }
             tot_comp += comp;
           }
-          printf("Completion batch: %d\n", batch_num++);
 
           c = (Node *)ctx->local_buf;
 
