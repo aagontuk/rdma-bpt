@@ -12,7 +12,7 @@
 #define SERVER_IP    "192.168.1.3"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
-#define ROOT_ADDR 0x7f72f69bb905
+#define ROOT_ADDR 0x7fcdfb64b905
 
 #define BATCH_SIZE 32
 #define MAX_THREADS  24
@@ -153,8 +153,8 @@ void connect_client(struct client_context *ctx) {
     struct ibv_qp_init_attr qp_attr = {
         .cap        = { .max_send_wr  = 1024,
                         .max_recv_wr  = 1024,
-                        .max_send_sge = 2,
-                        .max_recv_sge = 2 },
+                        .max_send_sge = 1,
+                        .max_recv_sge = 1 },
         .sq_sig_all = 1,
         .qp_type    = IBV_QPT_RC
     };
@@ -235,10 +235,12 @@ void *run_connection(void *arg) {
         // traverse the B+ tree until we reach a leaf node
         int req_num = 0;
         op_start = rdtsc();
+        int batch_num = 0;
         while(1) {
           bzero(ctx->local_buf, BUFFER_SIZE);
           bzero(&rd_wr, sizeof(rd_wr));
           uint64_t wr_id = ctx->thread_id * 10 + req_num++;
+          wr_id = 0;
           
           rd_wr.wr_id      = wr_id;
           rd_wr.opcode      = IBV_WR_RDMA_READ;
@@ -247,9 +249,11 @@ void *run_connection(void *arg) {
           rd_wr.sg_list     = &sge;
           rd_wr.num_sge     = 1;
           rd_wr.send_flags  = IBV_SEND_SIGNALED;
+          rd_wr.next        = NULL;
 
           // printf("Thread %d posting RDMA read, wr_id=%lu, addr=0x%lx\n",
                 // ctx->thread_id, wr_id, node_next);
+          printf("Submitted batch: %d\n", batch_num);
           for (int i = 0; i < BATCH_SIZE; i++) {
               if (ibv_post_send(ctx->id->qp, &rd_wr, &bad_wr))
                 die("ibv_post_send");
@@ -272,6 +276,7 @@ void *run_connection(void *arg) {
             }
             tot_comp += comp;
           }
+          printf("Completion batch: %d\n", batch_num++);
 
           c = (Node *)ctx->local_buf;
 

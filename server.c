@@ -109,8 +109,8 @@ int main() {
             struct ibv_qp_init_attr qp_attr = {
                 .cap        = { .max_send_wr  = 1024,
                                 .max_recv_wr  = 1024,
-                                .max_send_sge = 2,
-                                .max_recv_sge = 2 },
+                                .max_send_sge = 1,
+                                .max_recv_sge = 1 },
                 .sq_sig_all = 1,
                 .qp_type    = IBV_QPT_RC
             };
