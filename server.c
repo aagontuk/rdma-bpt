@@ -47,6 +47,7 @@ int main() {
     
     printf("root addr: %p (**CHANGE CLIENT ACCORDINGLY**)\n", state->root);
     printf("root key0: %lu\n", state->root->keys[0]);
+    printf("size of each node: %zu bytes\n", sizeof(Node));
     
     printf("search 6 → %s\n", bpt_search(state, 6) ? "found" : "not found");
     printf("search 15 → %s\n", bpt_search(state, 15)? "found" : "not found");
