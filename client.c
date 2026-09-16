@@ -8,10 +8,10 @@
 #include <infiniband/verbs.h>
 #include "bpt.h"
 
-#define SERVER_IP    "10.10.1.2"
+#define SERVER_IP    "10.10.1.1"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
-#define ROOT_ADDR 0x767b587f9905
+#define ROOT_ADDR 0x7406259f9905
 
 #define MAX_THREADS  32
 #define BENCH_TIME 10
