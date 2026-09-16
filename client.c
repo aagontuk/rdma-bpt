@@ -8,12 +8,12 @@
 #include <infiniband/verbs.h>
 #include "bpt.h"
 
-#define SERVER_IP    "10.10.1.1"
+#define SERVER_IP    "10.10.1.2"
 #define SERVER_PORT  "20079"
 #define BUFFER_SIZE  8192
-#define ROOT_ADDR 0x7f398724b905
+#define ROOT_ADDR 0x767b587f9905
 
-#define MAX_THREADS  16
+#define MAX_THREADS  32
 #define BENCH_TIME 10
 #define MAX_SAMPLES ((uint64_t)10000000)
 
@@ -241,18 +241,15 @@ void *run_connection(void *arg) {
               die("ibv_post_send");
           
           struct ibv_wc wc;
-          while(1) {
-              ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
-              if (wc.opcode == IBV_WC_RDMA_READ && wc.status == IBV_WC_SUCCESS && wc.wr_id == wr_id)
-                  break;
+          int poll_ret;
+          do {
+              poll_ret = ibv_poll_cq(ctx->id->qp->send_cq, 1, &wc);
+          } while (poll_ret == 0);
 
-              if (wc.status != IBV_WC_SUCCESS)
-                  die("ibv_poll_cq failed");
-              // printf("Thread %d polling CQ, wr_id=%lu, opcode=%d\n",
-                    // ctx->thread_id, wc.wr_id, wc.opcode);
-          }
-          
-          if (wc.status != IBV_WC_SUCCESS)
+          if (poll_ret < 0)
+              die("ibv_poll_cq failed");
+
+          if (wc.status != IBV_WC_SUCCESS || wc.wr_id != wr_id)
               die("RDMA read failed");
 
           c = (Node *)ctx->local_buf;
